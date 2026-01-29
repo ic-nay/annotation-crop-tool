@@ -7,21 +7,31 @@ parser = argparse.ArgumentParser(
 
 def main():
     args = parser.parse_args()
-    directories = []
     print(args)
+    parsed = parse_input(args)
+    if parsed["type"] == "yaml":
+        pass
+    elif parsed["type"] == "single":
+        pass
     # TODO: Add support for n directories, rather than just one
+    
+    pass
+
+def parse_input(args:list):
+    directories, categories = []
     if len(args["input"]) == 1:
         input = args["input"][0]
+        #Case: data.yaml file
         if os.path.isfile(input):
             directories, categories = yaml_parse(input)
         elif os.path.isdir(input):
-            # TODO: Make not awful
             found_directories = []
             # Search for either data.yaml or image+label directories
             with os.scandir(input) as dir_info:
                 for entry in dir_info:
                     if entry.is_dir():
                         found_directories.append(entry.name)
+                    #Case: found data.yaml file, same as above
                     elif entry.name == "data.yaml":
                         directories, categories = yaml_parse(input)
                         break
@@ -36,17 +46,24 @@ def main():
         # 4. Begin iterating over every file in the image directory, and look for a correspondingly-named file in the other directory.
         # 5. Try to parse the corresponding file
         # 6. Crop and save the resulting files according to the user's preferences.
-        
+        return {
+            "type":"yaml",
+            "input_directories":directories,
+            "categories":categories
+        }
 
     elif len(args["input"]) == 2:
+        if os.path.isfile(args["input"][0]) and os.path.isfile(args["input"][1]):
+            return {
+                "type":"single",
+                "files":args["input"]
+            }        
         # 1. Is one file an image?
         # 2. Is the other a text file?
         
         pass
     else:
         parser.error("A maximum of two parameters should be specified for the input")
-    
-    pass
 
 def yaml_parse(file_path:str):
     try:
