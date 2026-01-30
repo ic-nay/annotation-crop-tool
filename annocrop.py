@@ -104,39 +104,6 @@ def parse_output(args):
         "base_path":args.output
     }
 
-def create_category_directories(base_dir, categories):
-    print(categories)
-    for category in categories:
-        try:
-            os.mkdir(os.path.join(base_dir, category))
-        except FileExistsError:
-            pass
-        except:
-            parser.error(f"Cannot create or open category directory {os.path.join(base_dir, category)}")
-
-def parse_label_file(filepath, width, height) -> list:
-    labels = []
-    largest_category = 0
-    with open(filepath) as file:
-        for line in file:
-            print(line)
-            split_line = line.split(" ")
-            if len(split_line) == 5:
-                half_width = float(split_line[3])/2
-                half_height = float(split_line[4])/2
-                labels.append({
-                    "category":int(split_line[0]),
-                    "start_x": floor(width*(float(split_line[1]) - half_width)),
-                    "start_y": floor(height*(float(split_line[2]) - half_height)),
-                    "end_x" : floor(width*(float(split_line[1]) + half_width)),
-                    "end_y" : floor(height*(float(split_line[2]) + half_height)),
-                })
-                if int(split_line[0]) > largest_category:
-                    largest_category = int(split_line[0])
-            else:
-                return False
-    return labels, largest_category
-
 def crop_and_save(i, o) -> object:
     if i["categories"] is not None:
         categories = i["categories"]
@@ -201,6 +168,37 @@ def crop_and_save(i, o) -> object:
         "files":i["files"]
     }
 
+def parse_label_file(filepath, width, height) -> list:
+    labels = []
+    largest_category = 0
+    with open(filepath) as file:
+        for line in file:
+            print(line)
+            split_line = line.split(" ")
+            if len(split_line) == 5:
+                half_width = float(split_line[3])/2
+                half_height = float(split_line[4])/2
+                labels.append({
+                    "category":int(split_line[0]),
+                    "start_x": floor(width*(float(split_line[1]) - half_width)),
+                    "start_y": floor(height*(float(split_line[2]) - half_height)),
+                    "end_x" : floor(width*(float(split_line[1]) + half_width)),
+                    "end_y" : floor(height*(float(split_line[2]) + half_height)),
+                })
+                if int(split_line[0]) > largest_category:
+                    largest_category = int(split_line[0])
+            else:
+                return False
+    return labels, largest_category
+
+def create_category_directories(base_dir, categories):
+    for category in categories:
+        try:
+            os.mkdir(os.path.join(base_dir, category))
+        except FileExistsError:
+            pass
+        except:
+            parser.error(f"Cannot create or open category directory {os.path.join(base_dir, category)}")
 
 if __name__ == "__main__":
     parser.add_argument("-i", "--input", required=True, help="""
