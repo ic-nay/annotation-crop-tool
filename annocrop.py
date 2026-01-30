@@ -7,6 +7,26 @@ parser = argparse.ArgumentParser(
     prog="Annotation Cropper",
 )
 
+"""
+{
+    "type":"single",
+    "files":"",
+    "categories":[]
+}
+
+{
+    "type":"directory",
+    "directories":(),
+    "categories":[]
+}
+
+{
+    "type":"yaml",
+    "directories":[],
+    "categories":[]
+}
+"""
+
 def main():
     args = parser.parse_args()
     input_object = parse_input(args)
@@ -16,7 +36,7 @@ def main():
         process_yaml(input_object, output_object)
     elif input_object["type"] == "directory":
         # TODO: Add function to process "directory" type objects (iterate over every image file, find its matching label file, and then create a "single" type object to be passed to crop_and_save)
-        process_directory(parsed, output_object)
+        process_directory(input_object, output_object)
     elif input_object["type"] == "single":
         print(crop_and_save(input_object, output_object))
 
@@ -36,35 +56,28 @@ def parse_input(args):
                 "categories":categories
             }
         elif os.path.isdir(input):
-            directory_object = {
-                "type":"directory",
-                "image_directory":None,
-                "label_directory":None,
-                "categories":[]
-            }
+            found_directories = []
             # Search for either data.yaml or image+label directories
             with os.scandir(input) as dir_info:
                 for entry in dir_info:
                     if entry.is_dir():
-                        if entry.name == "images":
-                            directory_object["image_directory"] = "images"
-                        elif entry.name == "labels":
-                            directory_object["label_directory"] = "labels"
+                        found_directories.append(entry.path)
                     #Case: found data.yaml file, same as above
                     elif entry.name == "data.yaml":
                         directories, categories = yaml_parse(input)
-                        break
-            # TODO: Make names of image and label directories flexible, rather than hard-coded
-            if (directory_object["image_directory"] is not None) and (directory_object["label_directory"] is not None):
-                return directory_object
+                        return {
+                            "type":"yaml",
+                            "directories":directories,
+                            "categories":categories
+                        }
+            if len(found_directories) == 2:
+                return {
+                    "type":"directory",
+                    "directories":(found_directories[0], found_directories[1]),
+                    "categories":None
+                }
         else:
             parser.error(f"Input {input} is not a valid file or directory path")
-        # 3. If it doesn't, then inspect its subdirectories
-        #    3.1 Does it only have 2? Good!
-        #    3.2 Does one contain images? Good!
-        # 4. Begin iterating over every file in the image directory, and look for a correspondingly-named file in the other directory.
-        # 5. Try to parse the corresponding file
-        # 6. Crop and save the resulting files according to the user's preferences.
 
     elif len(args.input) == 2:
         if os.path.isfile(args.input[0]) and os.path.isfile(args.input[1]):
@@ -82,14 +95,19 @@ def yaml_parse(file_path:str):
     try:
         import yaml
     except:
-        print("Unable to find YAML library, please ensure that a Python YAML parsing library is installed and available under the \"yaml\" module name")
+        parser.error("Unable to find YAML library, please ensure that a Python YAML parsing library is installed and available under the \"yaml\" module name")
     try:
         with open(file_path) as file:
             yaml_file = yaml.safe_load(file)
     except:
-        print("Unable to parse YAML file, please ensure it is correctly formatted")
+        parser.error("Unable to parse YAML file, please ensure it is correctly formatted")
     
-    return [yaml_file['train'], yaml_file['val'], yaml_file['test']], yaml_file['names']
+    
+    base_path = os.path.dirname(file_path)
+    
+    return_directories = [directory.replace("/images", "", 1).replace("..", base_path, 1) for directory in [yaml_file['train'], yaml_file['val'], yaml_file['test']]]
+
+    return return_directories, yaml_file['names']
 
 def parse_output(args):
     try:
@@ -104,17 +122,47 @@ def parse_output(args):
         "base_path":args.output
     }
 
+def process_yaml(i, o):
+    # Iterate over each directory listed, and try to create a "directory" object
+    for directory in i["directories"]:
+        found_directories = []
+        with os.scandir(directory) as dir_info:
+            for entry in dir_info:
+                if entry.is_dir():
+                    found_directories.append(entry.path)
+        if len(found_directories) == 2:
+            process_directory({
+                "type":"directory",
+                "directories":(found_directories[0], found_directories[1]),
+                "categories":i["categories"]
+            }, o)
+
+def process_directory(i, o):
+    directory_one = os.scandir(i["directories"][0])
+    directory_two = os.scandir(i["directories"][1])
+    for files in zip(directory_one, directory_two):
+        if os.path.splitext(files[0].name) == os.path.splitext(files[0].name):
+            crop_and_save(
+                {
+                    "type":"single",
+                    "files":[files[0].path, files[1].path],
+                    "categories":i["categories"]
+                }, o
+            )
+
 def crop_and_save(i, o) -> object:
+    if i["type"] != "single":
+        return {
+                "result":False,
+                "message":f"Incorrect input object type, expected type \"single\" and received type \"{i["type"]}\"",
+                "files":i["files"]
+            }
     if i["categories"] is not None:
         categories = i["categories"]
     else:
         categories = None
     
     # Image and Label Loading
-
-    print(i["files"][0])
-    print("-"*25)
-    print(i["files"][1])
     
     image = cv2.imread(i["files"][0])
 
@@ -142,14 +190,16 @@ def crop_and_save(i, o) -> object:
                 "message":"No valid label file found",
                 "files":i["files"]
             }
-    # Create necessary category directories
+    
+    # Create necessary category directories. I think there's probably
+    # a better spot for this in the code
     if categories is not None and len(categories) == largest_category+1:
         create_category_directories(o["base_path"], categories)
     else:
         create_category_directories(o["base_path"], [str(i) for i in range(0, largest_category)])
 
     for label in labels:
-        cropped_image = image[label["start_x"]:label["end_x"], label["start_y"]:label["end_y"]]
+        cropped_image = image[label["start_y"]:label["end_y"], label["start_x"]:label["end_x"]]
         try:
             category = categories[label["category"]]
         except:
@@ -169,11 +219,11 @@ def crop_and_save(i, o) -> object:
     }
 
 def parse_label_file(filepath, width, height) -> list:
+    # TODO: Add support for greater than 4 points
     labels = []
     largest_category = 0
     with open(filepath) as file:
         for line in file:
-            print(line)
             split_line = line.split(" ")
             if len(split_line) == 5:
                 half_width = float(split_line[3])/2
